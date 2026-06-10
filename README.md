@@ -1,5 +1,7 @@
 # aws-ssm-picker
 
+[![CI](https://github.com/gostega/aws-ssm-picker/actions/workflows/ci.yml/badge.svg)](https://github.com/gostega/aws-ssm-picker/actions/workflows/ci.yml)
+
 An interactive terminal UI for launching [AWS Systems Manager (SSM)](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html) sessions onto EC2 instances — no SSH keys, no bastion hosts, no copying instance IDs around.
 
 Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Gloss](https://github.com/charmbracelet/lipgloss).
@@ -21,6 +23,10 @@ Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and [Lip Glo
 - Target instances must have the SSM agent running and an instance profile permitting Session Manager
 
 ## Install
+
+Download a prebuilt binary for your platform from the [latest release](https://github.com/gostega/aws-ssm-picker/releases/latest), extract it, and put `aws-ssm-picker` somewhere on your `PATH`.
+
+Or install with Go:
 
 ```sh
 go install github.com/gostega/aws-ssm-picker@latest
