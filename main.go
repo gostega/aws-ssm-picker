@@ -456,6 +456,8 @@ func cleanEnv() []string {
 }
 
 func awsCLI(args ...string) ([]byte, error) {
+	// #nosec G204 -- always execs the literal "aws" binary; args are structured CLI
+	// flags, never shell-interpreted. Wrapping the AWS CLI is this tool's purpose.
 	cmd := exec.Command("aws", args...)
 	cmd.Env = cleanEnv()
 	out, err := cmd.Output()
@@ -684,6 +686,7 @@ func loadAliases() map[string]string {
 
 func preflight(profile, region string) (string, error) {
 	if region == "" {
+		// #nosec G204 G702 -- literal "aws" binary with a fixed subcommand; profile is a CLI flag value, not shell input.
 		out, err := exec.Command("aws", "configure", "get", "region", "--profile", profile).Output()
 		resolved := strings.TrimSpace(string(out))
 		if err != nil || resolved == "" {
@@ -695,10 +698,12 @@ func preflight(profile, region string) (string, error) {
 		region = resolved
 	}
 
+	// #nosec G204 G702 -- literal "aws" binary with a fixed subcommand; profile is a CLI flag value, not shell input.
 	probe := exec.Command("aws", "sts", "get-caller-identity", "--profile", profile)
 	probe.Env = cleanEnv()
 	if err := probe.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Not logged in. Running: aws sso login --profile %s\n\n", profile)
+		// #nosec G204 G702 -- literal "aws" binary with a fixed subcommand; profile is a CLI flag value, not shell input.
 		login := exec.Command("aws", "sso", "login", "--profile", profile)
 		login.Stdin, login.Stdout, login.Stderr = os.Stdin, os.Stdout, os.Stderr
 		if runErr := login.Run(); runErr != nil {
