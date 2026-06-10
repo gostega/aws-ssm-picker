@@ -255,6 +255,7 @@ func loadProfiles() []string {
 	if err != nil {
 		return nil
 	}
+	// #nosec G304 -- path is the user's own ~/.aws/config, not external input.
 	f, err := os.Open(filepath.Join(home, ".aws", "config"))
 	if err != nil {
 		return nil
@@ -664,6 +665,7 @@ func loadAliases() map[string]string {
 	if err != nil {
 		return aliases
 	}
+	// #nosec G304 -- path is the user's own ~/.aws_ssm_aliases, not external input.
 	f, err := os.Open(filepath.Join(home, ".aws_ssm_aliases"))
 	if err != nil {
 		return aliases
@@ -797,6 +799,8 @@ func main() {
 
 	fmt.Println(successStyle.Render("Connecting to " + fm.instanceID + " (" + fm.instanceName + ")..."))
 
+	// #nosec G204 -- execing the resolved `aws` CLI is the whole purpose of this tool;
+	// args are an AWS profile/region/instance selected by the user, not shell input.
 	if err := syscall.Exec(awsBin, args, cleanEnv()); err != nil {
 		fmt.Fprintln(os.Stderr, "exec:", err)
 		os.Exit(1)
