@@ -1,0 +1,15 @@
+# Built binaries
+aws-ssm-picker
+aws-ssm
+dist/
+
+# Local tooling
+.claude/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
