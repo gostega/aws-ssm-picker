@@ -37,8 +37,12 @@ Or build from source:
 ```sh
 git clone https://github.com/gostega/aws-ssm-picker.git
 cd aws-ssm-picker
-go build -o aws-ssm-picker .
+make          # vet + build, stamped with the version from `git describe`
+make install  # into $GOBIN, then prints the installed version
 ```
+
+Building via `make` stamps the version and commit into the binary; a plain
+`go build` leaves it as `dev`.
 
 ## Usage
 
@@ -53,7 +57,12 @@ AWS_PROFILE=my-profile AWS_REGION=us-east-1 aws-ssm-picker
 aws-ssm-picker my-web-server
 aws-ssm-picker i-0123456789abcdef0
 aws-ssm-picker web
+
+# Print the build version and exit
+aws-ssm-picker --version
 ```
+
+The version also appears in the TUI title bar on every screen.
 
 If `AWS_REGION` is not set, the region is resolved from the selected profile's configuration.
 

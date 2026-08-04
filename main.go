@@ -81,14 +81,28 @@ var (
 	profSpaceStr  = "  "
 )
 
+// Version and Commit are set at build time via -ldflags (see Makefile).
+var (
+	Version = "dev"
+	Commit  = ""
+)
+
+// versionString renders the build version, with the commit when known.
+func versionString() string {
+	if Commit != "" && Commit != "unknown" {
+		return fmt.Sprintf("%s (%s)", Version, Commit)
+	}
+	return Version
+}
+
 // renderAppHeader renders the shared title bar used across all TUI screens.
 func renderAppHeader(w int, subtitle string) string {
 	if w == 0 {
 		w = 80
 	}
-	right := ""
+	right := "  " + mutedStyle.Render(Version)
 	if subtitle != "" {
-		right = "  " + metaStyle.Render(subtitle)
+		right += "  " + metaStyle.Render(subtitle)
 	}
 	return dividerStyle.Width(w).Render(titleStyle.Render("⚡ AWS SSM Connect") + right)
 }
@@ -829,6 +843,11 @@ func main() {
 
 	nameArg := ""
 	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--version", "-v", "version":
+			fmt.Println("aws-ssm-picker " + versionString())
+			return
+		}
 		nameArg = os.Args[1]
 	}
 
