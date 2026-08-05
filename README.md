@@ -37,8 +37,12 @@ Or build from source:
 ```sh
 git clone https://github.com/gostega/aws-ssm-picker.git
 cd aws-ssm-picker
-go build -o aws-ssm-picker .
+make          # vet + build, stamped with the version from `git describe`
+make install  # into $GOBIN, then prints the installed version
 ```
+
+Building via `make` stamps the version and commit into the binary; a plain
+`go build` leaves it as `dev`.
 
 ## Usage
 
@@ -53,7 +57,12 @@ AWS_PROFILE=my-profile AWS_REGION=us-east-1 aws-ssm-picker
 aws-ssm-picker my-web-server
 aws-ssm-picker i-0123456789abcdef0
 aws-ssm-picker web
+
+# Print the build version and exit
+aws-ssm-picker --version
 ```
+
+The version also appears in the TUI title bar on every screen.
 
 If `AWS_REGION` is not set, the region is resolved from the selected profile's configuration.
 
@@ -73,3 +82,72 @@ An alias maps a shorthand to either an instance name or an instance ID. The form
 ## License
 
 [MIT](LICENSE)
+
+## History
+
+This tool replaced a pair of `bash` functions in `~/.bashrc` — an `ssm` wrapper
+and a hard-coded `GetId` name→instance-ID lookup table. Instance IDs below are
+redacted; the shape is verbatim.
+
+```sh
+GetId() {
+
+  1>&2 echo "Entering GetId"
+
+  case "$1" in
+
+    gpl10)
+      echo "i-xxxxxxxxxxxxxxxxx"
+      ;;
+    gpl9)
+      echo "i-xxxxxxxxxxxxxxxxx"
+      ;;
+    # ... gpl8, gpl7, gpl6, gpl5, gpl4, gpl3, gpl2, gpl1
+    salt)
+      echo "i-xxxxxxxxxxxxxxxxx"
+      ;;
+    reporting)
+      echo "i-xxxxxxxxxxxxxxxxx"
+      ;;
+    cron)
+      echo "i-xxxxxxxxxxxxxxxxx"
+      ;;
+    logs)
+      echo "i-xxxxxxxxxxxxxxxxx"
+      ;;
+    metabase)
+      echo "i-xxxxxxxxxxxxxxxxx"
+      ;;
+    bastion)
+      echo "i-xxxxxxxxxxxxxxxxx"
+      ;;
+    *)
+      echo "not found"
+      return 1
+      ;;
+  esac
+}
+
+ssm () {
+  [[ -n "$1" ]] || read -r -p "Enter target (e.g. 'gpl2' or 'salt'): " target
+  read -r -p "Enter reason (ideally including jira ticket like PAY-1234): " reason
+  instanceid="$(GetId "$target")"
+  echo "You entered target $target which translates to $instanceid, and reason '$reason'"
+  echo "Connecting now..."
+  command="aws ssm start-session --target '${instanceid:?}' --reason '${reason:?}'"
+  echo "Running command: $command"
+  read -r -p "Press y to continue (y/n): " continue
+  [[ "${continue}" == "y" ]] && eval "$command"
+}
+```
+
+What the Go tool changed:
+
+- Instance list comes from `ec2 describe-instances` instead of a hand-maintained
+  `case` block, so new instances need no edit — and `~/.aws_ssm_aliases` covers
+  the shorthand names that were the table's real purpose.
+- Profile and region are picked interactively rather than inherited from
+  whatever was last exported.
+- `exec`s the AWS CLI directly instead of `eval`-ing a string, and the reason
+  prompt is optional rather than mandatory.
+

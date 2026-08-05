@@ -37,7 +37,10 @@ jobs:
           mkdir -p dist
           binary=aws-ssm-picker
           [ "$GOOS" = "windows" ] && binary=aws-ssm-picker.exe
-          go build -trimpath -ldflags="-s -w" -o "dist/$binary" .
+          version="${GITHUB_REF_NAME#v}"
+          go build -trimpath \
+            -ldflags="-s -w -X main.Version=${version} -X main.Commit=$(git rev-parse --short HEAD)" \
+            -o "dist/$binary" .
 
       - name: Archive
         run: |

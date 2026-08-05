@@ -81,14 +81,28 @@ var (
 	profSpaceStr  = "  "
 )
 
+// Version and Commit are set at build time via -ldflags (see Makefile).
+var (
+	Version = "dev"
+	Commit  = ""
+)
+
+// versionString renders the build version, with the commit when known.
+func versionString() string {
+	if Commit != "" && Commit != "unknown" {
+		return fmt.Sprintf("%s (%s)", Version, Commit)
+	}
+	return Version
+}
+
 // renderAppHeader renders the shared title bar used across all TUI screens.
 func renderAppHeader(w int, subtitle string) string {
 	if w == 0 {
 		w = 80
 	}
-	right := ""
+	right := "  " + mutedStyle.Render(Version)
 	if subtitle != "" {
-		right = "  " + metaStyle.Render(subtitle)
+		right += "  " + metaStyle.Render(subtitle)
 	}
 	return dividerStyle.Width(w).Render(titleStyle.Render("⚡ AWS SSM Connect") + right)
 }
@@ -277,6 +291,48 @@ func loadProfiles() []string {
 	return profiles
 }
 
+// regionChoices lists regions to offer when the current one came up empty:
+// every region mentioned in ~/.aws/config, plus a few common ones, minus the
+// region we just tried.
+// ponytail: static + config-derived list rather than `aws ec2 describe-regions`
+// — no extra API call, and these are the only regions we ever run in. Swap to
+// describe-regions if that stops being true.
+func regionChoices(exclude string) []string {
+	seen := map[string]bool{exclude: true}
+	var out []string
+	add := func(r string) {
+		if r != "" && !seen[r] {
+			seen[r] = true
+			out = append(out, r)
+		}
+	}
+
+	if home, err := os.UserHomeDir(); err == nil {
+		// #nosec G304 -- path is the user's own ~/.aws/config, not external input.
+		if f, err := os.Open(filepath.Join(home, ".aws", "config")); err == nil {
+			defer f.Close()
+			sc := bufio.NewScanner(f)
+			for sc.Scan() {
+				k, v, ok := strings.Cut(sc.Text(), "=")
+				if !ok {
+					continue
+				}
+				if k = strings.TrimSpace(k); k == "region" || k == "sso_region" {
+					add(strings.TrimSpace(v))
+				}
+			}
+		}
+	}
+
+	for _, r := range []string{
+		"ap-southeast-2", "ap-southeast-1", "ap-southeast-4", "ap-northeast-1",
+		"us-east-1", "us-west-2", "eu-west-1",
+	} {
+		add(r)
+	}
+	return out
+}
+
 func filterProfiles(all []string, query string) []string {
 	if query == "" {
 		return all
@@ -350,6 +406,7 @@ func (compactDelegate) Render(w io.Writer, m list.Model, index int, item list.It
 type (
 	instancesLoadedMsg  []Instance
 	instanceResolvedMsg struct{ id, name string }
+	noInstancesMsg      struct{ region, detail string }
 	errMsg              struct{ err error }
 )
 
@@ -358,6 +415,7 @@ type appState int
 const (
 	stateLoading appState = iota
 	statePicking
+	stateRegion
 	stateReason
 	stateDone
 )
@@ -375,6 +433,11 @@ type model struct {
 	instanceID   string
 	instanceName string
 	reason       string
+
+	// Region fallback: populated when a region turns up no instances.
+	regions      []string
+	regionCursor int
+	regionNote   string
 
 	statusMsg string
 	err       error
@@ -508,7 +571,7 @@ func listInstancesCmd(profile, region string) tea.Cmd {
 		}
 
 		if len(instances) == 0 {
-			return errMsg{fmt.Errorf("no running instances found in region %s", region)}
+			return noInstancesMsg{region: region, detail: "no running instances"}
 		}
 
 		sort.Slice(instances, func(i, j int) bool {
@@ -537,7 +600,7 @@ func resolveCmd(profile, region, name string) tea.Cmd {
 
 		id := strings.TrimSpace(string(out))
 		if id == "" || id == "None" {
-			return errMsg{fmt.Errorf("no running instance found with name %q", name)}
+			return noInstancesMsg{region: region, detail: fmt.Sprintf("no running instance named %q", name)}
 		}
 		return instanceResolvedMsg{id: id, name: name}
 	}
@@ -575,6 +638,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+		case stateRegion:
+			switch msg.String() {
+			case "q", "esc":
+				return m, tea.Quit
+			case "up", "k":
+				if m.regionCursor > 0 {
+					m.regionCursor--
+				}
+				return m, nil
+			case "down", "j":
+				if m.regionCursor < len(m.regions)-1 {
+					m.regionCursor++
+				}
+				return m, nil
+			case "enter":
+				if len(m.regions) == 0 {
+					return m, tea.Quit
+				}
+				m.awsRegion = m.regions[m.regionCursor]
+				m.state = stateLoading
+				if m.instanceName != "" {
+					m.statusMsg = fmt.Sprintf("Resolving %q in %s...", m.instanceName, m.awsRegion)
+					return m, tea.Batch(m.spinner.Tick, resolveCmd(m.awsProfile, m.awsRegion, m.instanceName))
+				}
+				m.statusMsg = "Loading instances in " + m.awsRegion + "..."
+				return m, tea.Batch(m.spinner.Tick, listInstancesCmd(m.awsProfile, m.awsRegion))
+			}
+
 		case stateReason:
 			switch msg.String() {
 			case "enter":
@@ -598,6 +689,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.list.SetItems(items)
 		m.state = statePicking
+		return m, nil
+
+	case noInstancesMsg:
+		m.regions = regionChoices(msg.region)
+		m.regionCursor = 0
+		m.regionNote = msg.detail + " in " + msg.region
+		if len(m.regions) == 0 {
+			m.err = fmt.Errorf("%s in region %s", msg.detail, msg.region)
+			return m, tea.Quit
+		}
+		m.state = stateRegion
 		return m, nil
 
 	case instanceResolvedMsg:
@@ -634,6 +736,23 @@ func (m model) View() string {
 
 	case statePicking:
 		body = m.list.View()
+
+	case stateRegion:
+		lines := make([]string, 0, len(m.regions))
+		for i, r := range m.regions {
+			if i == m.regionCursor {
+				lines = append(lines, profCursorStr+" "+profSelStyle.Render(r))
+			} else {
+				lines = append(lines, profSpaceStr+profNormStyle.Render(r))
+			}
+		}
+		body = "\n" +
+			lipgloss.NewStyle().PaddingLeft(2).Render(lipgloss.JoinVertical(lipgloss.Left,
+				labelStyle.Render(m.regionNote+" — try another region?"),
+				"",
+				strings.Join(lines, "\n"),
+			)) + "\n\n" +
+			helpStyle.Render("  ↑/↓ navigate  ·  Enter retry in region  ·  q / Esc exit") + "\n"
 
 	case stateReason:
 		nameAndID := valueStyle.Render(m.instanceName) + "  " + mutedStyle.Render(m.instanceID)
@@ -724,6 +843,11 @@ func main() {
 
 	nameArg := ""
 	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "--version", "-v", "version":
+			fmt.Println("aws-ssm-picker " + versionString())
+			return
+		}
 		nameArg = os.Args[1]
 	}
 
